@@ -343,7 +343,7 @@ contract Dealz is Context, IERC20, Ownable {
             "Invalid token Expiry date"
         );
         require(
-            _stake != 500000000000000000000000, "Lawyer must stake 0.025%"
+            _stake != 500000 * (10**9), "Lawyer must stake 0.025%"
         );
         _burn(msg.sender, _stake);
         unlockDate = _unlockDate;
