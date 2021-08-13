@@ -66,22 +66,22 @@ contract Dealz is Context, IERC20, Ownable {
       
         //mint all tokens according to token economics
       _rOwned[teamAddress] = totalSupply.div(10).mul(3);
-      _rOwned[advisorAddress] = totalSupply.div(10).mul(1);
-      _rOwned[operationAddress] = totalSupply.div(100).mul(3);
+      _rOwned[operationAddress] = totalSupply.div(10).mul(1);
+      _rOwned[advisorAddress] = totalSupply.div(100).mul(3);
       _rOwned[governanceAddress] = totalSupply.div(20).mul(1);
       _rOwned[stakingAddress] = totalSupply.div(5).mul(1);
       _rOwned[privatesaleAddress] = totalSupply.div(20).mul(1);
       _rOwned[publicAddress] = totalSupply.div(100).mul(23);
       _rOwned[grantAddress] = totalSupply.div(25).mul(1);
 
-      emit Transfer(address(0), teamAddress, (6* (10**8)));
-      emit Transfer(address(0), advisorAddress, (6*(10**7)));
-      emit Transfer(address(0), operationAddress, (2*(10**8)));
-      emit Transfer(address(0), governanceAddress, (1*(10**8)));
-      emit Transfer(address(0), stakingAddress, (4*(10**8)));
-      emit Transfer(address(0), privatesaleAddress, (1*(10**8)));
-      emit Transfer(address(0), publicAddress, (46*(10**7)));
-      emit Transfer(address(0), grantAddress, (8*(10**7)));
+      emit Transfer(address(0), teamAddress, _tTotal.div(10).mul(3));
+      emit Transfer(address(0), advisorAddress, _tTotal.div(100).mul(3));
+      emit Transfer(address(0), operationAddress, _tTotal.div(10).mul(1));
+      emit Transfer(address(0), governanceAddress, _tTotal.div(20).mul(1));
+      emit Transfer(address(0), stakingAddress, _tTotal.div(5).mul(1));
+      emit Transfer(address(0), privatesaleAddress, _tTotal.div(20).mul(1));
+      emit Transfer(address(0), publicAddress, _tTotal.div(100).mul(23));
+      emit Transfer(address(0), grantAddress, _tTotal.div(25).mul(1));
 
       teams.push(teamAddress);
       teams.push(advisorAddress);
@@ -227,61 +227,73 @@ contract Dealz is Context, IERC20, Ownable {
         require(sender != address(0), "ERC20: transfer from the zero address");
         require(recipient != address(0), "ERC20: transfer to the zero address");
         require(amount > 0, "Transfer amount must be greater than zero");
-        uint256 finalAmount = amount.sub(amount.div(100).mul(5));
-        uint256 stakingPool = amount.div(100).mul(5);
-        uint256 currentRate =  _getRate();
-        uint256 rTransferAmount = stakingPool.mul(currentRate);
-        _tOwned[stakingAddress] = _tOwned[stakingAddress].add(stakingPool); 
-        _rOwned[stakingAddress] = _rOwned[stakingAddress].add(rTransferAmount); 
         if (_isExcluded[sender] && !_isExcluded[recipient]) {
-            _transferFromExcluded(sender, recipient, finalAmount);
+            _transferFromExcluded(sender, recipient, amount);
         } else if (!_isExcluded[sender] && _isExcluded[recipient]) {
-            _transferToExcluded(sender, recipient, finalAmount);
+            _transferToExcluded(sender, recipient, amount);
         } else if (!_isExcluded[sender] && !_isExcluded[recipient]) {
-            _transferStandard(sender, recipient, finalAmount);
+            _transferStandard(sender, recipient, amount);
         } else if (_isExcluded[sender] && _isExcluded[recipient]) {
-            _transferBothExcluded(sender, recipient, finalAmount);
+            _transferBothExcluded(sender, recipient, amount);
         } else {
-            _transferStandard(sender, recipient, finalAmount);
+            _transferStandard(sender, recipient, amount);
         }
     }
 
     function _transferStandard(address sender, address recipient, uint256 tAmount) private {
         (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee) = _getValues(tAmount);
+        (uint256 total_StakingAmount,uint256 total_RecipientAmount,uint256 stakingFee,uint256 recipientFee) = _getStakingValue(tAmount,tTransferAmount,rAmount,rTransferAmount); 
         _rOwned[sender] = _rOwned[sender].sub(rAmount);
-        _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);       
+        _rOwned[stakingAddress] = _rOwned[stakingAddress].add(stakingFee);
+        _rOwned[recipient] = _rOwned[recipient].add(recipientFee);       
         _reflectFee(rFee, tFee);
-        emit Transfer(sender, recipient, tTransferAmount);
+        emit Transfer(sender, recipient, total_RecipientAmount);
+        emit Transfer(sender, stakingAddress, total_StakingAmount);
     }
 
     function _transferToExcluded(address sender, address recipient, uint256 tAmount) private {
         (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee) = _getValues(tAmount);
+        (uint256 total_StakingAmount,uint256 total_RecipientAmount,uint256 stakingFee,uint256 recipientFee) = _getStakingValue(tAmount,tTransferAmount,rAmount,rTransferAmount); 
         _rOwned[sender] = _rOwned[sender].sub(rAmount);
-        _tOwned[recipient] = _tOwned[recipient].add(tTransferAmount);
-        _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);           
+        _tOwned[recipient] = _tOwned[recipient].add(total_RecipientAmount);
+        _rOwned[recipient] = _rOwned[recipient].add(recipientFee); 
+        _rOwned[stakingAddress] = _rOwned[stakingAddress].add(stakingFee);
+        _tOwned[stakingAddress] = _tOwned[stakingAddress].add(stakingFee);
         _reflectFee(rFee, tFee);
-        emit Transfer(sender, recipient, tTransferAmount);
+        emit Transfer(sender, recipient, total_RecipientAmount);
+        emit Transfer(sender, recipient, total_StakingAmount);
     }
 
     function _transferFromExcluded(address sender, address recipient, uint256 tAmount) private {
         (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee) = _getValues(tAmount);
+        (uint256 total_StakingAmount,uint256 total_RecipientAmount,uint256 stakingFee,uint256 recipientFee) = _getStakingValue(tAmount,tTransferAmount,rAmount,rTransferAmount); 
         _tOwned[sender] = _tOwned[sender].sub(tAmount);
         _rOwned[sender] = _rOwned[sender].sub(rAmount);
-        _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);   
+        _rOwned[recipient] = _rOwned[recipient].add(recipientFee);   
+        _rOwned[stakingAddress] = _rOwned[stakingAddress].add(stakingFee);
         _reflectFee(rFee, tFee);
-        emit Transfer(sender, recipient, tTransferAmount);
-    }
+        emit Transfer(sender, recipient, total_RecipientAmount);
+        emit Transfer(sender, recipient, total_StakingAmount);    }
 
     function _transferBothExcluded(address sender, address recipient, uint256 tAmount) private {
         (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee) = _getValues(tAmount);
+        (uint256 total_StakingAmount,uint256 total_RecipientAmount,uint256 stakingFee,uint256 recipientFee) = _getStakingValue(tAmount,tTransferAmount,rAmount,rTransferAmount); 
         _tOwned[sender] = _tOwned[sender].sub(tAmount);
         _rOwned[sender] = _rOwned[sender].sub(rAmount);
-        _tOwned[recipient] = _tOwned[recipient].add(tTransferAmount);
-        _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);        
+        _tOwned[recipient] = _tOwned[recipient].add(total_RecipientAmount);
+        _rOwned[recipient] = _rOwned[recipient].add(recipientFee);     
+        _rOwned[stakingAddress] = _rOwned[stakingAddress].add(stakingFee);
         _reflectFee(rFee, tFee);
-        emit Transfer(sender, recipient, tTransferAmount);
+        emit Transfer(sender, recipient, total_RecipientAmount);
+        emit Transfer(sender, recipient, total_StakingAmount);    }
+    
+    function _getStakingValue(uint256 tAmount,uint256 tTransferAmount,uint256 rAmount,uint256 rTransferAmount) private pure returns(uint256,uint256,uint256,uint256){
+        uint256 total_StakingAmount = tAmount.div(1000).mul(25);
+        uint256 total_RecipientAmount = tTransferAmount.sub(total_StakingAmount);
+        uint256 stakingFee = rAmount.div(1000).mul(25);
+        uint256 recipientFee = rTransferAmount.sub(stakingFee);
+        return (total_StakingAmount,total_RecipientAmount,stakingFee,recipientFee);
     }
-
     function _reflectFee(uint256 rFee, uint256 tFee) private {
         _rTotal = _rTotal.sub(rFee);
         _tFeeTotal = _tFeeTotal.add(tFee);
@@ -294,7 +306,7 @@ contract Dealz is Context, IERC20, Ownable {
         return (rAmount, rTransferAmount, rFee, tTransferAmount, tFee);
     }
     function _getTValues(uint256 tAmount) private pure returns (uint256, uint256) {
-        uint256 tFee = tAmount.div(100).mul(5);
+        uint256 tFee = tAmount.div(1000).mul(25);
         uint256 tTransferAmount = tAmount.sub(tFee);
         return (tTransferAmount, tFee);
     }
@@ -398,11 +410,7 @@ contract Dealz is Context, IERC20, Ownable {
             stakeholders.pop();
         } 
     }
-    // function buyContract(address recipient, uint256 amount)public{
-    //     transactionFee = amount%5;
-    //     amount = amount - transactionFee;
-    //     _transfer(_msgSender(), stakingAddress, transactionFee);
-    //     _transfer(_msgSender(), recipient, amount);
-    //     return true;
-    // }
+    function buyContract(address recipient, uint256 amount)public{
+        
+    }
 }
