@@ -31,11 +31,12 @@ contract Dealz is Context, IERC20, Ownable {
     address public privatesaleAddress;
     address public publicAddress;
     address public grantAddress;
-    uint public unlockDate;
     address[] internal stakeholders;
     address[] internal teams;
 
     mapping(address => uint256) internal stakes;
+    mapping(address => uint256) internal startDate;
+    mapping(address => uint256) internal unlockDate;
 
     uint256 private constant MAX = ~uint256(0);
     uint256 private constant _tTotal = 2 * (10**9) * 10**9;
@@ -111,7 +112,7 @@ contract Dealz is Context, IERC20, Ownable {
 
     function balanceOf(address account) public view override returns (uint256) {
         if (_isExcluded[account]) return _tOwned[account];
-        return tokenFromReflection(_rOwned[account]);
+        return tokenFromReflection(_rOwned[account], account);
     }
 
     function transfer(address recipient, uint256 amount) public override returns (bool) {
@@ -187,16 +188,16 @@ contract Dealz is Context, IERC20, Ownable {
         }
     }
 
-    function tokenFromReflection(uint256 rAmount) public view returns(uint256) {
+    function tokenFromReflection(uint256 rAmount, address account) public view returns(uint256) {
         require(rAmount <= _rTotal, "Amount must be less than total reflections");
         uint256 currentRate =  _getRate();
         return rAmount.div(currentRate);
     }
-
+    
     function excludeAccount(address account) external onlyOwner() {
         require(!_isExcluded[account], "Account is already excluded");
         if(_rOwned[account] > 0) {
-            _tOwned[account] = tokenFromReflection(_rOwned[account]);
+            _tOwned[account] = tokenFromReflection(_rOwned[account], account);
         }
         _isExcluded[account] = true;
         _excluded.push(account);
@@ -288,9 +289,9 @@ contract Dealz is Context, IERC20, Ownable {
         emit Transfer(sender, recipient, total_StakingAmount);    }
     
     function _getStakingValue(uint256 tAmount,uint256 tTransferAmount,uint256 rAmount,uint256 rTransferAmount) private pure returns(uint256,uint256,uint256,uint256){
-        uint256 total_StakingAmount = tAmount.div(1000).mul(25);
+        uint256 total_StakingAmount = tAmount.div(1000).mul(5);
         uint256 total_RecipientAmount = tTransferAmount.sub(total_StakingAmount);
-        uint256 stakingFee = rAmount.div(1000).mul(25);
+        uint256 stakingFee = rAmount.div(1000).mul(5);
         uint256 recipientFee = rTransferAmount.sub(stakingFee);
         return (total_StakingAmount,total_RecipientAmount,stakingFee,recipientFee);
     }
@@ -306,7 +307,7 @@ contract Dealz is Context, IERC20, Ownable {
         return (rAmount, rTransferAmount, rFee, tTransferAmount, tFee);
     }
     function _getTValues(uint256 tAmount) private pure returns (uint256, uint256) {
-        uint256 tFee = tAmount.div(1000).mul(25);
+        uint256 tFee = tAmount.div(1000).mul(5);
         uint256 tTransferAmount = tAmount.sub(tFee);
         return (tTransferAmount, tFee);
     }
@@ -335,9 +336,7 @@ contract Dealz is Context, IERC20, Ownable {
         return (rSupply, tSupply);
     }
     
-    function createStake(uint256 _stake,uint _unlockDate)
-        public
-    {
+    function createStake(uint256 _stake,uint256 _unlockDate) public{
         require(
             block.timestamp+30 days <= _unlockDate,
             "Invalid token Expiry date"
@@ -346,71 +345,72 @@ contract Dealz is Context, IERC20, Ownable {
             _stake != 500000 * (10**9), "Lawyer must stake 0.025%"
         );
         _burn(msg.sender, _stake);
-        unlockDate = _unlockDate;
+        
         if(stakes[msg.sender] == 0) addStakeholder(msg.sender);
         stakes[msg.sender] = stakes[msg.sender].add(_stake);
+        unlockDate[msg.sender] = _unlockDate;
     }
-    
-    function createVestingAdmin(uint256 _stake,uint _unlockDate, address _address)
-        public 
-    {
-        require(isTeamholder(),'not a team member address');
+    function createVestingAdmin(uint256 _stake,uint256 _unlockDate, address _address) public {
         _burn(msg.sender, _stake);
-        unlockDate = _unlockDate;
         if(stakes[_address] == 0) addStakeholder(_address);
         stakes[_address] = stakes[_address].add(_stake);
+        unlockDate[_address] = _unlockDate;
+        startDate[_address] = block.timestamp;
     }
-    function removeStakeAdmin(uint256 _stake, address _address)
-        public
-    {   
-        require(block.timestamp >= unlockDate, 'Cannot withdraw before unlockDate');
+    function removeStakeAdmin(uint256 _stake, address _address) public {   
+        require(block.timestamp >= unlockDate[_address], 'Cannot withdraw before unlockDate');
         stakes[_address] = stakes[_address].sub(_stake);
         if(stakes[_address] == 0) removeStakeholder(_address);
         _mint(_address, _stake);
     }
-    function addStakeholder(address _stakeholder)
-        public
-    {
+    function addStakeholder(address _stakeholder) public {
         (bool _isStakeholder, ) = isStakeholder(_stakeholder);
         if(!_isStakeholder) stakeholders.push(_stakeholder);
     }
-    function isStakeholder(address _address)
-        public
-        view
-        returns(bool, uint256)
-    {
+    function isStakeholder(address _address) public view returns(bool, uint256) {
         for (uint256 s = 0; s < stakeholders.length; s += 1){
             if (_address == stakeholders[s]) return (true, s);
         }
         return (false, 0);
     }
-    function isTeamholder()
-        public 
-        view 
-        returns(bool)
-    {
+    function isTeamholder() public view returns(bool){
         for (uint256 s = 0; s < teams.length; s += 1){
             if (msg.sender == teams[s]) return (true);
         }
         return (false);
     }
-    function stakeOf(address _stakeholder)
-        public
-        view
-        returns(uint256)
-    {
+    function stakeOf(address _stakeholder) public view returns(uint256){
         return stakes[_stakeholder];
     }
-    function removeStakeholder(address _stakeholder)
-        public
-    {
+    function removeStakeholder(address _stakeholder) public {
         (bool _isStakeholder, uint256 s) = isStakeholder(_stakeholder);
         if(_isStakeholder){
             stakeholders[s] = stakeholders[stakeholders.length - 1];
             stakeholders.pop();
         } 
     }
-    function buyContract(address recipient, uint256 amount)public{
-        
+    function buyContract(address recipient, uint256 amount) public {}
+    function calculateDifference(address account) public view returns(uint256) {
+        uint256 total_Seconds = (unlockDate[account] - startDate[account]);
+        uint256 token_transfer_per_second = stakes[account].div(total_Seconds);
+        if(block.timestamp >= unlockDate[account]) return stakes[msg.sender];
+        uint256 reaminingSeconds = (unlockDate[account]-block.timestamp);
+        uint256 spentSeconds = total_Seconds - reaminingSeconds;
+        uint256 tokenGained = token_transfer_per_second.mul(spentSeconds);
+        return tokenGained;
     }
+    function withdrawStake(uint256 amount) public{
+        uint256 tokenGained = calculateDifference(msg.sender);
+        require(amount <= tokenGained, 'You do not have sufficient amount');
+        stakes[msg.sender] = stakes[msg.sender].sub(amount);
+        if(stakes[msg.sender] == 0) removeStakeholder(msg.sender);
+        _mint(msg.sender, amount);
+    }
+    function tunlockdate() public view returns (uint256) {
+        return unlockDate[msg.sender] ;
+    }
+    function tstartdate() public view returns (uint256) {
+        return startDate[msg.sender] ;
+    }
+
 }
